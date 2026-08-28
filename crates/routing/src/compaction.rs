@@ -350,4 +350,97 @@ mod tests {
         assert!(edge.provider.is_none());
         assert!(edge.bridge.is_none());
     }
+
+    fn sdex_edge(from: String, to: String) -> LiquidityEdge {
+        LiquidityEdge {
+            from,
+            to,
+            venue_type: "sdex".into(),
+            venue_ref: "offer-1".into(),
+            liquidity: 1_000_000_000,
+            price: 0.25,
+            fee_bps: 30,
+            provider: Some("sdex".into()),
+            bridge: None,
+        }
+    }
+
+    fn amm_edge(from: String, to: String) -> LiquidityEdge {
+        LiquidityEdge {
+            from,
+            to,
+            venue_type: "amm".into(),
+            venue_ref: "pool-1".into(),
+            liquidity: 5_000_000_000,
+            price: 0.26,
+            fee_bps: 30,
+            provider: Some("soroban-amm".into()),
+            bridge: None,
+        }
+    }
+
+    #[test]
+    fn round_trip_preserves_sdex_venue_type() {
+        let from = xlm();
+        let to = usdc();
+        let graph = CompactedGraph::from_edges(vec![sdex_edge(from.clone(), to.clone())]);
+        let restored = graph.to_edges();
+        assert_eq!(restored.len(), 1);
+        assert_eq!(restored[0].venue_type, "sdex");
+        assert_eq!(restored[0].venue_ref, "offer-1");
+        assert_eq!(restored[0].liquidity, 1_000_000_000);
+        assert_eq!(restored[0].provider.as_deref(), Some("sdex"));
+        assert!(restored[0].bridge.is_none());
+    }
+
+    #[test]
+    fn round_trip_preserves_amm_venue_type() {
+        let from = xlm();
+        let to = usdc();
+        let graph = CompactedGraph::from_edges(vec![amm_edge(from.clone(), to.clone())]);
+        let restored = graph.to_edges();
+        assert_eq!(restored.len(), 1);
+        assert_eq!(restored[0].venue_type, "amm");
+        assert_eq!(restored[0].venue_ref, "pool-1");
+        assert_eq!(restored[0].provider.as_deref(), Some("soroban-amm"));
+    }
+
+    #[test]
+    fn mixed_venue_round_trip_does_not_launder_bridge() {
+        let from = usdc();
+        let to = eth_usdc();
+        let bridge = BridgeEdgeMeta::bridge(
+            "example-bridge",
+            &ChainId::stellar_pubnet(),
+            &ChainId::ethereum_mainnet(),
+        );
+        let edges = vec![
+            sdex_edge(xlm(), usdc()),
+            amm_edge(xlm(), usdc()),
+            LiquidityEdge {
+                from: from.clone(),
+                to: to.clone(),
+                venue_type: "bridge".into(),
+                venue_ref: "example-bridge:lane".into(),
+                liquidity: 50_000_000_000,
+                price: 1.0,
+                fee_bps: 10,
+                provider: Some("example-bridge".into()),
+                bridge: Some(bridge.clone()),
+            },
+        ];
+        let restored = CompactedGraph::from_edges(edges).to_edges();
+        assert_eq!(restored.len(), 3);
+        let types: Vec<_> = restored.iter().map(|e| e.venue_type.as_str()).collect();
+        assert!(types.contains(&"sdex"));
+        assert!(types.contains(&"amm"));
+        assert!(types.contains(&"bridge"));
+        let bridge_edge = restored
+            .iter()
+            .find(|e| e.venue_type == "bridge")
+            .expect("bridge edge");
+        assert_eq!(bridge_edge.bridge.as_ref(), Some(&bridge));
+        assert_ne!(bridge_edge.venue_type, "sdex");
+        assert_ne!(bridge_edge.venue_type, "amm");
+    }
 }
