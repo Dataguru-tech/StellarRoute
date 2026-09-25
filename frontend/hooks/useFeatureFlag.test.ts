@@ -21,6 +21,24 @@ beforeEach(() => {
   delete process.env.NEXT_PUBLIC_FLAG_ROUTES_BETA;
   delete process.env.NEXT_PUBLIC_FLAG_SWAP_UI_V2;
   delete process.env.NEXT_PUBLIC_FLAG_REAL_XDR;
+  delete process.env.NEXT_PUBLIC_FLAG_AI_AGENT;
+});
+
+describe("resolveFlag / ai_agent default", () => {
+  it("defaults ai_agent off for initial and post-hydration resolution", () => {
+    expect(resolveFlagForInitialRender("ai_agent")).toBe(false);
+    expect(resolveFlag("ai_agent")).toBe(false);
+  });
+
+  it("honors explicit ai_agent=true from env", () => {
+    process.env.NEXT_PUBLIC_FLAG_AI_AGENT = "true";
+    expect(resolveFlagForInitialRender("ai_agent")).toBe(true);
+    expect(resolveFlag("ai_agent")).toBe(true);
+  });
+
+  it("honors explicit ai_agent=true from remote config", () => {
+    expect(resolveFlag("ai_agent", { ai_agent: true })).toBe(true);
+  });
 });
 
 describe("resolveFlag / real_xdr security pin", () => {

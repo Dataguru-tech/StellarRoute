@@ -18,11 +18,22 @@ const ANALYTICS_NAV_ITEM: NavItem = {
   href: "/analytics",
 };
 
-/** Build header navigation items, optionally including analytics when enabled. */
-export function getNavItems(options: { analyticsEnabled: boolean }): NavItem[] {
-  if (!options.analyticsEnabled) {
-    return BASE_NAV_ITEMS;
-  }
+const AGENT_NAV_ITEM: NavItem = {
+  label: "Agent",
+  href: "/ai",
+};
 
-  return [...BASE_NAV_ITEMS, ANALYTICS_NAV_ITEM];
+/** Build header navigation items, optionally including analytics and agent when enabled. */
+export function getNavItems(options?: {
+  analyticsEnabled?: boolean;
+  aiAgentEnabled?: boolean;
+}): NavItem[] {
+  const items = [...BASE_NAV_ITEMS];
+  if (options?.analyticsEnabled) {
+    items.push(ANALYTICS_NAV_ITEM);
+  }
+  if (options?.aiAgentEnabled) {
+    items.push(AGENT_NAV_ITEM);
+  }
+  return items;
 }
