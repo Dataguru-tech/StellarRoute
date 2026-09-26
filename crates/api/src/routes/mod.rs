@@ -1,6 +1,7 @@
 //! API routes
 
 pub mod activity;
+pub mod agent;
 pub mod admin;
 pub mod admin_cache;
 pub mod assets;
@@ -260,10 +261,11 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             "/api/v1/contracts/registry/:contract_name/network/:network",
             get(contract_registry::get_contract_version_by_network),
         )
-        // Agent intent validation (AI-11)
+        // Agent feature routes (AI-37). Return 404 when AI_AGENT_ENABLED is unset.
+        .route("/api/v1/agent/health", get(agent::agent_health))
         .route(
             "/api/v1/agent/intents/validate",
-            post(crate::agent::validate_intent),
+            post(agent::agent_intents_validate),
         )
         // WebSocket quote stream (real-time quotes)
         .route("/ws", get(ws::ws_handler))
