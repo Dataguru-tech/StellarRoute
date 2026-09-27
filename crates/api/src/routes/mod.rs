@@ -153,7 +153,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             dependency_breaker_guard,
         ));
 
-    Router::new()
+    let mut app = Router::new()
         // Health check
         .route("/health", get(health::health_check))
         .route("/health/deps", get(health::dependency_health))
@@ -268,6 +268,12 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             post(agent::agent_intents_validate),
         )
         // WebSocket quote stream (real-time quotes)
-        .route("/ws", get(ws::ws_handler))
-        .with_state(state)
+        .route("/ws", get(ws::ws_handler));
+
+    // Conditionally add card routes
+    if crate::card::is_card_enabled() {
+        app = app.merge(card::create_card_router(state.clone()));
+    }
+
+    app.with_state(state)
 }
