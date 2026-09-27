@@ -49,6 +49,7 @@ use crate::models::{
         crate::routes::v2_cctp::cctp_submit_mint,
         crate::routes::v2_cctp::cctp_reattest,
         crate::routes::agent::agent_health,
+        crate::routes::agent::agent_tools,
         crate::routes::agent::agent_intents_validate,
     ),
     components(schemas(
@@ -98,6 +99,8 @@ use crate::models::{
         crate::models::response::SwapSubmitResponse,
         crate::routes::card::CardHealth,
         crate::routes::card::CardApplicationDraft,
+        crate::agent::AgentTool,
+        crate::agent::AgentToolsResponse,
         crate::routes::card::CardApplicationValidation,
         crate::routes::card::CardAuthorization,
         crate::routes::card::CardAuthorizationsResponse,

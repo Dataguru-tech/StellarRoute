@@ -263,6 +263,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         )
         // Agent feature routes (AI-37). Return 404 when AI_AGENT_ENABLED is unset.
         .route("/api/v1/agent/health", get(agent::agent_health))
+        .route("/api/v1/agent/tools", get(agent::agent_tools))
         .route(
             "/api/v1/agent/intents/validate",
             post(agent::agent_intents_validate),
