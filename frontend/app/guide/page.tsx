@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ExternalLink } from "lucide-react";
 
 import { buildPageMetadata } from "@/lib/seo";
+import AgentGuideSection from "./agent-guide-section";
 
 export const metadata = buildPageMetadata({
   title: "First Stellar DEX Swap Guide",
@@ -107,6 +108,8 @@ export default function FirstSwapGuidePage() {
             </li>
           ))}
         </ol>
+
+        <AgentGuideSection />
 
         <aside className="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">
           <p className="font-medium text-foreground">Before you confirm</p>
