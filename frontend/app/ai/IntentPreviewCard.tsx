@@ -1,7 +1,9 @@
 'use client';
 
 import * as React from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
+import { buildOfframpRedirectUrl } from '@/lib/ai/client';
 import { emitAgentTelemetry, type AgentIntentKind } from './telemetry';
 import { CheckCircle2, X } from 'lucide-react';
 
@@ -54,13 +56,23 @@ export function IntentPreviewCard({
   className,
 }: IntentPreviewCardProps) {
   const [confirmed, setConfirmed] = React.useState(false);
+  const router = useRouter();
 
   const handleConfirm = React.useCallback(() => {
     if (confirmed) return;
     setConfirmed(true);
     emitAgentTelemetry('agent_confirm', intent.kind);
+
+    if (intent.kind === 'offramp') {
+      const redirectUrl = buildOfframpRedirectUrl(intent);
+      if (redirectUrl) {
+        router.push(redirectUrl);
+        return;
+      }
+    }
+
     onConfirm?.(intent);
-  }, [confirmed, intent, onConfirm]);
+  }, [confirmed, intent, onConfirm, router]);
 
   const handleCancel = React.useCallback(() => {
     emitAgentTelemetry('agent_cancel', intent.kind);
