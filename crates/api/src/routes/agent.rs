@@ -7,7 +7,10 @@ use axum::{http::StatusCode, response::IntoResponse, Json};
 use serde::Serialize;
 use utoipa::ToSchema;
 
-use crate::models::ApiErrorCode;
+use crate::{
+    agent::{list_agent_tools, AgentToolsResponse},
+    models::ApiErrorCode,
+};
 
 /// Agent health response body
 #[derive(Debug, Serialize, ToSchema)]
@@ -56,6 +59,36 @@ pub async fn agent_health() -> impl IntoResponse {
         Json(serde_json::json!({ "enabled": true })),
     )
         .into_response()
+}
+
+/// List the static AI agent tool catalog.
+///
+/// Returns 200 with the seven non-executable tool descriptors when the flag is
+/// enabled. Returns 404 when the flag is unset or false.
+#[utoipa::path(
+    get,
+    path = "/api/v1/agent/tools",
+    tag = "agent",
+    responses(
+        (status = 200, description = "Tool catalog returned", body = AgentToolsResponse),
+        (status = 404, description = "Agent feature is disabled", body = ErrorResponse),
+    )
+)]
+pub async fn agent_tools() -> impl IntoResponse {
+    if !is_agent_enabled() {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "error": {
+                    "code": ApiErrorCode::NotFound.as_str(),
+                    "message": "Agent feature is disabled"
+                }
+            })),
+        )
+            .into_response();
+    }
+
+    (StatusCode::OK, Json(AgentToolsResponse { tools: list_agent_tools() })).into_response()
 }
 
 /// Validate an agent intent without storing it

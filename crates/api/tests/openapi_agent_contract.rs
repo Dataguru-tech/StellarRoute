@@ -65,8 +65,7 @@ async fn openapi_agent_paths_are_present() {
         );
 
         assert!(
-            operation["responses"]["200"].is_object()
-                || operation["responses"]["404"].is_object(),
+            operation["responses"]["200"].is_object() || operation["responses"]["404"].is_object(),
             "{method} {path} must document at least a 200 or 404 response"
         );
     }
@@ -161,4 +160,85 @@ async fn openapi_agent_health_documents_404_response() {
         health_op["responses"]["200"].is_object(),
         "GET /api/v1/agent/health must document a 200 response for the flag-on state"
     );
+}
+
+#[tokio::test]
+async fn agent_tools_catalog_requires_flag_and_returns_static_catalog() {
+    std::env::remove_var("AI_AGENT_ENABLED");
+    let router = setup_router().await;
+
+    let response = router
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/agent/tools")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    std::env::set_var("AI_AGENT_ENABLED", "true");
+    let router = setup_router().await;
+    let response = router
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/agent/tools")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let spec: Value = serde_json::from_slice(&body).unwrap();
+    let tools = spec["tools"].as_array().expect("tools array required");
+    assert_eq!(tools.len(), 7, "must include the seven static tools");
+
+    let names: Vec<_> = tools
+        .iter()
+        .map(|item| item["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        names,
+        vec![
+            "convert",
+            "send",
+            "receive",
+            "bridge",
+            "offramp",
+            "subscribe",
+            "balance",
+        ]
+    );
+
+    assert!(tools.iter().all(|tool| tool["executable"] == false));
+    for name in [
+        "convert",
+        "send",
+        "receive",
+        "bridge",
+        "offramp",
+        "subscribe",
+    ] {
+        let tool = tools
+            .iter()
+            .find(|item| item["name"] == name)
+            .expect("tool should exist");
+        assert_eq!(tool["requires_user_signature"], Value::Bool(true));
+    }
+
+    let balance = tools
+        .iter()
+        .find(|item| item["name"] == "balance")
+        .expect("balance tool should exist");
+    assert_eq!(balance["requires_user_signature"], Value::Bool(false));
+    assert!(
+        !spec["quote"].is_object() && !spec["route"].is_object() && !spec["swap"].is_object(),
+        "tool catalog response must not expose legacy quote/route/swap fields"
+    );
+    std::env::remove_var("AI_AGENT_ENABLED");
 }
