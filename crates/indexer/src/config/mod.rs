@@ -126,7 +126,40 @@ pub struct IndexerConfig {
     pub indexer_health_file: Option<String>,
 }
 
+impl Default for IndexerConfig {
+    fn default() -> Self {
+        Self {
+            stellar_horizon_url: "https://horizon.stellar.org".to_string(),
+            stellar_horizon_fallback_urls: String::new(),
+            horizon_mode: HorizonMode::Poll,
+            soroban_rpc_url: "https://soroban-testnet.stellar.org".to_string(),
+            soroban_rpc_fallback_urls: String::new(),
+            router_contract_address: String::new(),
+            database_url: "postgres://localhost/stellarroute".to_string(),
+            poll_interval_secs: default_poll_interval_secs(),
+            amm_poll_interval_secs: default_amm_poll_interval_secs(),
+            stale_threshold_secs: default_stale_threshold_secs(),
+            horizon_limit: default_horizon_limit(),
+            max_connections: default_max_connections(),
+            min_connections: default_min_connections(),
+            connection_timeout_secs: default_connection_timeout_secs(),
+            idle_timeout_secs: default_idle_timeout_secs(),
+            max_lifetime_secs: default_max_lifetime_secs(),
+            maintenance_interval_mins: default_maintenance_interval_mins(),
+            snapshot_retention_days: default_snapshot_retention_days(),
+            snapshot_compaction_hours: default_snapshot_compaction_hours(),
+            partition_count: default_partition_count(),
+            hot_pair_allowlist: default_hot_pair_allowlist(),
+            hot_pair_volume_threshold: default_hot_pair_volume_threshold(),
+            hot_pair_window_secs: default_hot_pair_window_secs(),
+            partition_id: default_partition_id(),
+            indexer_health_file: None,
+        }
+    }
+}
+
 impl std::fmt::Debug for IndexerConfig {
+
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("IndexerConfig")
             .field("stellar_horizon_url", &self.stellar_horizon_url)
