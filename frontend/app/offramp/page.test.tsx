@@ -1,6 +1,12 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+
+const mockUseSearchParams = vi.hoisted(() => vi.fn(() => new URLSearchParams()));
+
+vi.mock('next/navigation', () => ({
+  useSearchParams: () => mockUseSearchParams(),
+}));
 
 import {
   isNigerianCbnBankCode,
@@ -29,12 +35,34 @@ const NGN_QUOTE_FIXTURE = buildOfframpQuotePreview({
 });
 
 describe('OfframpPage metadata', () => {
+  beforeEach(() => {
+    mockUseSearchParams.mockReturnValue(new URLSearchParams());
+  });
+
   it('keeps the SEO title, description and canonical path', () => {
     expect(metadata).toMatchObject({
       title: 'Offramp to Naira',
       description: expect.stringContaining('Nigerian Naira (NGN)'),
       alternates: { canonical: expect.stringContaining('/offramp') },
     });
+  });
+
+  it('prefills the form when amount and source query params are present', () => {
+    mockUseSearchParams.mockReturnValue(new URLSearchParams('amount=250&source=base-usdc'));
+
+    render(<OfframpPage />);
+
+    expect(screen.getByTestId('offramp-amount')).toHaveValue('250');
+    expect(screen.getByTestId('offramp-asset-base-usdc')).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('leaves the bare offramp screen unchanged when no query params are present', () => {
+    mockUseSearchParams.mockReturnValue(new URLSearchParams());
+
+    render(<OfframpPage />);
+
+    expect(screen.getByTestId('offramp-amount')).toHaveValue('');
+    expect(screen.getByTestId('offramp-asset-stellar-usdc')).toHaveAttribute('aria-selected', 'true');
   });
 });
 
