@@ -261,6 +261,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             "/api/v1/contracts/registry/:contract_name/network/:network",
             get(contract_registry::get_contract_version_by_network),
         )
+        // AI agent health check (fail-closed behind AI_AGENT_ENABLED)
+        .route("/api/v1/agent/health", get(crate::agent::agent_health))
         // Agent feature routes (AI-37). Return 404 when AI_AGENT_ENABLED is unset.
         .route("/api/v1/agent/health", get(agent::agent_health))
         .route("/api/v1/agent/tools", get(agent::agent_tools))
