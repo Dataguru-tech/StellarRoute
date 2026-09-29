@@ -4,6 +4,7 @@ import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { buildOfframpRedirectUrl } from '@/lib/ai/client';
+import { capMessage, exceedsCap } from '@/lib/ai/cap';
 import { emitAgentTelemetry, type AgentIntentKind } from './telemetry';
 import { CheckCircle2, X } from 'lucide-react';
 
@@ -25,7 +26,11 @@ export interface IntentPreviewCardProps {
   onConfirm?: (intent: ParsedAgentIntent) => void;
   onCancel?: (intent: ParsedAgentIntent) => void;
   className?: string;
+  /** Local per-confirm USDC cap (AI-31); null or unset means no extra block. */
+  usdcCap?: number | null;
 }
+
+const RECEIVE_ONLY_KINDS: ReadonlySet<AgentIntentKind> = new Set(['receive', 'balance']);
 
 function formatIntentSummary(intent: ParsedAgentIntent): string {
   if (intent.summary) return intent.summary;
@@ -54,12 +59,17 @@ export function IntentPreviewCard({
   onConfirm,
   onCancel,
   className,
+  usdcCap = null,
 }: IntentPreviewCardProps) {
   const [confirmed, setConfirmed] = React.useState(false);
   const router = useRouter();
+  const overCap =
+    usdcCap !== null &&
+    !RECEIVE_ONLY_KINDS.has(intent.kind) &&
+    exceedsCap(intent.amount, intent.fromAsset, usdcCap);
 
   const handleConfirm = React.useCallback(() => {
-    if (confirmed) return;
+    if (confirmed || overCap) return;
     setConfirmed(true);
     emitAgentTelemetry('agent_confirm', intent.kind);
 
@@ -72,7 +82,7 @@ export function IntentPreviewCard({
     }
 
     onConfirm?.(intent);
-  }, [confirmed, intent, onConfirm, router]);
+  }, [confirmed, overCap, intent, onConfirm, router]);
 
   const handleCancel = React.useCallback(() => {
     emitAgentTelemetry('agent_cancel', intent.kind);
@@ -102,12 +112,18 @@ export function IntentPreviewCard({
         {formatIntentSummary(intent)}
       </p>
 
+      {overCap && usdcCap !== null && (
+        <p className="text-xs text-destructive" data-testid="cap-exceeded">
+          {capMessage(usdcCap)}
+        </p>
+      )}
+
       <div className="flex items-center gap-2 pt-1">
         <Button
           variant="default"
           size="sm"
           onClick={handleConfirm}
-          disabled={confirmed}
+          disabled={confirmed || overCap}
           data-testid="confirm-btn"
           className="gap-1.5"
         >
