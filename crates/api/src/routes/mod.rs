@@ -1,10 +1,12 @@
 //! API routes
 
 pub mod activity;
+pub mod agent;
 pub mod admin;
 pub mod admin_cache;
 pub mod assets;
 pub mod canary;
+pub mod card;
 pub mod contract_registry;
 pub mod health;
 pub mod idempotent_quote;
@@ -151,10 +153,11 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             dependency_breaker_guard,
         ));
 
-    Router::new()
+    let mut app = Router::new()
         // Health check
         .route("/health", get(health::health_check))
         .route("/health/deps", get(health::dependency_health))
+        .merge(crate::card::router())
         .merge(operator_routes)
         .merge(live_path_routes)
         // API v2 seam (chain-aware assets; quotes remain on v1)
@@ -212,6 +215,18 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         // yet — see `routes::swap` module docs.
         .route("/api/v1/swap/prepare", post(swap::prepare_swap))
         .route("/api/v1/swap/submit", post(swap::submit_swap))
+        // Card program preview (CARD-38, issues #1495-#1498): additive,
+        // flag-gated behind CARD_ENABLED (default off → 404). Never touches
+        // the live swap/quote path.
+        .route("/api/v1/card/health", get(card::card_health))
+        .route(
+            "/api/v1/card/applications/validate",
+            post(card::validate_card_application),
+        )
+        .route(
+            "/api/v1/card/authorizations",
+            get(card::list_card_authorizations),
+        )
         // Replay routes are registered above via `operator_routes`.
         // Admin routes
         .route(
@@ -248,7 +263,20 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         )
         // AI agent health check (fail-closed behind AI_AGENT_ENABLED)
         .route("/api/v1/agent/health", get(crate::agent::agent_health))
+        // Agent feature routes (AI-37). Return 404 when AI_AGENT_ENABLED is unset.
+        .route("/api/v1/agent/health", get(agent::agent_health))
+        .route("/api/v1/agent/tools", get(agent::agent_tools))
+        .route(
+            "/api/v1/agent/intents/validate",
+            post(agent::agent_intents_validate),
+        )
         // WebSocket quote stream (real-time quotes)
-        .route("/ws", get(ws::ws_handler))
-        .with_state(state)
+        .route("/ws", get(ws::ws_handler));
+
+    // Conditionally add card routes
+    if crate::card::is_card_enabled() {
+        app = app.merge(card::create_card_router(state.clone()));
+    }
+
+    app.with_state(state)
 }

@@ -13,14 +13,23 @@ use serde::Serialize;
 pub enum AuthorizationState {
     Pending,
     Approved,
+    Captured,
+    Reversed,
+    Refunded,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AuthorizationRecord {
     pub authorization_id: String,
     pub state: AuthorizationState,
-    /// Held USDC amount in stroops (7 decimals).
+    /// Locked USDC amount in stroops (7 decimals).
     pub amount_stroops: i64,
+    /// Amount captured from the hold so far.
+    pub spent_stroops: i64,
+    pub fiat_amount: i64,
+    pub fiat_currency: String,
+    pub rate: f64,
+    pub rate_locked_at: i64,
     pub tx_hash: String,
 }
 
@@ -37,6 +46,18 @@ pub enum StoreError {
     AlreadyApproved,
     /// The tx hash already approved a different authorization.
     TxAlreadyUsed,
+    /// Authorization record is not known.
+    AuthorizationNotFound,
+    /// No active hold exists for this authorization.
+    HoldNotFound,
+    /// Event amount exceeds the current hold or captured amount.
+    AmountExceedsAvailable,
+    /// Refund exceeded the amount already captured.
+    RefundExceedsCaptured,
+    /// Webhook fiat amount differs from the locked authorization value by more than one minor unit.
+    FiatAmountMismatch,
+    /// Unsupported partner event type.
+    UnsupportedEventType,
 }
 
 pub trait CardStore: Send + Sync {
@@ -46,7 +67,35 @@ pub trait CardStore: Send + Sync {
         authorization_id: &str,
         tx_hash: &str,
         amount_stroops: i64,
+    ) -> Result<AuthorizationRecord, StoreError> {
+        self.approve_and_hold_with_fx(
+            authorization_id,
+            tx_hash,
+            amount_stroops,
+            0,
+            "",
+            0.0,
+            0,
+        )
+    }
+
+    fn approve_and_hold_with_fx(
+        &self,
+        authorization_id: &str,
+        tx_hash: &str,
+        amount_stroops: i64,
+        fiat_amount: i64,
+        fiat_currency: &str,
+        rate: f64,
+        rate_locked_at: i64,
     ) -> Result<AuthorizationRecord, StoreError>;
+    /// Capture a cleared amount from the current hold.
+    fn capture_hold(&self, authorization_id: &str, amount_stroops: i64) -> Result<AuthorizationRecord, StoreError>;
+    /// Release an existing hold while keeping the authorization record intact.
+    fn reverse_hold(&self, authorization_id: &str) -> Result<AuthorizationRecord, StoreError>;
+    /// Refund already captured funds back to available balance up to the captured amount.
+    fn refund_hold(&self, authorization_id: &str, amount_stroops: i64) -> Result<AuthorizationRecord, StoreError>;
+    fn list_authorizations(&self) -> Vec<AuthorizationRecord>;
     fn authorization(&self, authorization_id: &str) -> Option<AuthorizationRecord>;
     /// Current held amount in stroops for an authorization (0 if none).
     fn held_stroops(&self, authorization_id: &str) -> i64;
@@ -70,11 +119,15 @@ pub struct InMemoryCardStore {
 }
 
 impl CardStore for InMemoryCardStore {
-    fn approve_and_hold(
+    fn approve_and_hold_with_fx(
         &self,
         authorization_id: &str,
         tx_hash: &str,
         amount_stroops: i64,
+        fiat_amount: i64,
+        fiat_currency: &str,
+        rate: f64,
+        rate_locked_at: i64,
     ) -> Result<AuthorizationRecord, StoreError> {
         let mut inner = self.inner.lock();
         if let Some(existing) = inner.tx_to_auth.get(tx_hash) {
@@ -92,6 +145,11 @@ impl CardStore for InMemoryCardStore {
             authorization_id: authorization_id.to_string(),
             state: AuthorizationState::Approved,
             amount_stroops,
+            spent_stroops: 0,
+            fiat_amount,
+            fiat_currency: fiat_currency.to_string(),
+            rate,
+            rate_locked_at,
             tx_hash: tx_hash.to_string(),
         };
         inner
@@ -104,6 +162,76 @@ impl CardStore for InMemoryCardStore {
             .holds
             .insert(authorization_id.to_string(), amount_stroops);
         Ok(record)
+    }
+
+    fn capture_hold(&self, authorization_id: &str, amount_stroops: i64) -> Result<AuthorizationRecord, StoreError> {
+        let mut inner = self.inner.lock();
+        let mut record = inner
+            .authorizations
+            .get(authorization_id)
+            .cloned()
+            .ok_or(StoreError::AuthorizationNotFound)?;
+
+        let current_held = inner.holds.get(authorization_id).copied().unwrap_or(record.amount_stroops);
+        if current_held < amount_stroops {
+            return Err(StoreError::AmountExceedsAvailable);
+        }
+
+        let new_spent = record.spent_stroops + amount_stroops;
+        let new_held = current_held - amount_stroops;
+        record.spent_stroops = new_spent;
+        record.state = AuthorizationState::Captured;
+        inner.holds.insert(authorization_id.to_string(), new_held);
+        inner.authorizations.insert(authorization_id.to_string(), record.clone());
+        Ok(record)
+    }
+
+    fn reverse_hold(&self, authorization_id: &str) -> Result<AuthorizationRecord, StoreError> {
+        let mut inner = self.inner.lock();
+        let mut record = inner
+            .authorizations
+            .get(authorization_id)
+            .cloned()
+            .ok_or(StoreError::AuthorizationNotFound)?;
+
+        let held = inner.holds.get(authorization_id).copied().unwrap_or(record.amount_stroops);
+        if held == 0 {
+            return Err(StoreError::HoldNotFound);
+        }
+
+        inner.holds.remove(authorization_id);
+        record.amount_stroops = 0;
+        record.spent_stroops = 0;
+        record.state = AuthorizationState::Reversed;
+        inner.authorizations.insert(authorization_id.to_string(), record.clone());
+        Ok(record)
+    }
+
+    fn refund_hold(&self, authorization_id: &str, amount_stroops: i64) -> Result<AuthorizationRecord, StoreError> {
+        let mut inner = self.inner.lock();
+        let mut record = inner
+            .authorizations
+            .get(authorization_id)
+            .cloned()
+            .ok_or(StoreError::AuthorizationNotFound)?;
+
+        if amount_stroops > record.spent_stroops {
+            return Err(StoreError::RefundExceedsCaptured);
+        }
+
+        record.spent_stroops -= amount_stroops;
+        let hold = inner.holds.get(authorization_id).copied().unwrap_or(record.amount_stroops);
+        inner.holds.insert(authorization_id.to_string(), hold + amount_stroops);
+        record.state = AuthorizationState::Refunded;
+        inner.authorizations.insert(authorization_id.to_string(), record.clone());
+        Ok(record)
+    }
+
+    fn list_authorizations(&self) -> Vec<AuthorizationRecord> {
+        let mut inner = self.inner.lock();
+        let mut records: Vec<_> = inner.authorizations.values().cloned().collect();
+        records.sort_by(|a, b| a.authorization_id.cmp(&b.authorization_id));
+        records
     }
 
     fn authorization(&self, authorization_id: &str) -> Option<AuthorizationRecord> {
@@ -168,5 +296,41 @@ mod tests {
         assert!(store.insert_partner_event(ev.clone()));
         assert!(!store.insert_partner_event(ev));
         assert_eq!(store.partner_event_count(), 1);
+    }
+
+    #[test]
+    fn locked_rate_is_preserved_on_authorization() {
+        let store = InMemoryCardStore::default();
+        let record = store
+            .approve_and_hold_with_fx("auth-1", "tx-1", 100, 2500, "USD", 1.25, 1700000000)
+            .unwrap();
+
+        assert_eq!(record.fiat_amount, 2500);
+        assert_eq!(record.fiat_currency, "USD");
+        assert_eq!(record.rate, 1.25);
+        assert_eq!(record.rate_locked_at, 1700000000);
+    }
+
+    #[test]
+    fn clearing_increases_spent_and_decreases_held() {
+        let store = InMemoryCardStore::default();
+        store.approve_and_hold("auth-1", "tx-1", 100).unwrap();
+
+        let record = store.capture_hold("auth-1", 100).unwrap();
+        assert_eq!(record.spent_stroops, 100);
+        assert_eq!(store.held_stroops("auth-1"), 0);
+    }
+
+    #[test]
+    fn refund_above_captured_fails() {
+        let store = InMemoryCardStore::default();
+        store.approve_and_hold("auth-1", "tx-1", 100).unwrap();
+        store.capture_hold("auth-1", 100).unwrap();
+
+        assert_eq!(
+            store.refund_hold("auth-1", 101),
+            Err(StoreError::RefundExceedsCaptured)
+        );
+        assert_eq!(store.authorization("auth-1").unwrap().spent_stroops, 100);
     }
 }

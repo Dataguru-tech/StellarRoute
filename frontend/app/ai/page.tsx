@@ -7,6 +7,30 @@ export default function AiPage() {
   const { enabled, loading } = useFeatureFlag('ai_agent');
 
   if (loading) {
+import { AgentStatusChip } from './AgentStatusChip';
+import { AgentChat } from './AgentChat';
+
+function isAiAgentEnabled(): boolean {
+  if (typeof window !== 'undefined') {
+    const flags = (window as unknown as { __STELLAR_ROUTE_FLAGS__?: Record<string, boolean> })
+      .__STELLAR_ROUTE_FLAGS__;
+    if (flags?.ai_agent !== undefined) {
+      return Boolean(flags.ai_agent);
+    }
+  }
+  return process.env.NEXT_PUBLIC_AI_AGENT === 'true' || process.env.NEXT_PUBLIC_AI_AGENT === '1';
+}
+
+export default function AiPage() {
+  const [enabled, setEnabled] = React.useState<boolean>(false);
+  const [mounted, setMounted] = React.useState<boolean>(false);
+
+  React.useEffect(() => {
+    setEnabled(isAiAgentEnabled());
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
     return (
       <div className="container mx-auto px-4 py-12 max-w-4xl" data-testid="ai-page-loading">
         <div className="animate-pulse space-y-4">
@@ -45,6 +69,17 @@ export default function AiPage() {
         >
           <p>Agent preview shell initialized.</p>
         </div>
+        <div className="flex items-center justify-between pb-4 border-b border-border">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">AI Agent</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Non-custodial trading assistant.
+            </p>
+          </div>
+          <AgentStatusChip />
+        </div>
+
+        <AgentChat />
       </div>
     </div>
   );
