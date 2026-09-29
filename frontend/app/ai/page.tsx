@@ -1,12 +1,6 @@
 'use client';
 
 import * as React from 'react';
-import { useFeatureFlag } from '@/hooks/useFeatureFlag';
-
-export default function AiPage() {
-  const { enabled, loading } = useFeatureFlag('ai_agent');
-
-  if (loading) {
 import { AgentStatusChip } from './AgentStatusChip';
 import { AgentChat } from './AgentChat';
 
@@ -57,18 +51,6 @@ export default function AiPage() {
   return (
     <div className="container mx-auto px-4 py-12 max-w-4xl" data-testid="ai-page-shell">
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">AI Agent</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Non-custodial trading assistant.
-          </p>
-        </div>
-        <div
-          data-testid="agent-empty-shell"
-          className="rounded-lg border border-dashed border-border p-12 text-center text-muted-foreground"
-        >
-          <p>Agent preview shell initialized.</p>
-        </div>
         <div className="flex items-center justify-between pb-4 border-b border-border">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">AI Agent</h1>
